@@ -1,6 +1,7 @@
 apply plugin: "java-library"
 apply plugin: 'maven-publish'
 
+group = 'com.esotericsoftware'
 version '2.22.8'
 
 sourceCompatibility = 1.8
@@ -12,6 +13,8 @@ repositories {
 }
 
 test {
+    jvmArgs '--illegal-access=warn', '--add-opens=java.base/java.lang=ALL-UNNAMED'
+
     useJUnitPlatform()
 
     testLogging {
