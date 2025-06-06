@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
@@ -288,7 +287,7 @@ public class RmiTest extends KryoNetTestCase {
         }
     }
 
-    public void register(Kryo kryo, ObjectSpaceV2 registry) {
+    public void register(Kryo kryo, RemoteSpace registry) {
         super.register(kryo);
 
         registry.registerEvents(kryo);
@@ -311,14 +310,14 @@ public class RmiTest extends KryoNetTestCase {
         List<String> receivedEvents = new ArrayList<>(4);
 
         Server server = new Server();
-        ObjectSpaceV2 serverRegistry = new ObjectSpaceV2();
+        RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
         startEndPoint(server);
         server.bind(tcpPort, udpPort);
         serverRegistry.hostObject(server, new SimpleFunctionsImpl(server));
 
         Client client = new Client();
-        ObjectSpaceV2 clientRegistry = new ObjectSpaceV2();
+        RemoteSpace clientRegistry = new RemoteSpace();
         register(client.getKryo(), clientRegistry);
         client.addListener(Listener.received(String.class, (connection, object) -> receivedEvents.add((String) object)));
         SimpleFunctions functions = clientRegistry.createRemote(client, SimpleFunctions.class);
@@ -347,14 +346,14 @@ public class RmiTest extends KryoNetTestCase {
         List<String> receivedClosures = new ArrayList<>(4);
 
         Server server = new Server();
-        ObjectSpaceV2 serverRegistry = new ObjectSpaceV2();
+        RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
         startEndPoint(server);
         server.bind(tcpPort, udpPort);
         serverRegistry.hostObject(server, new ClosureTestImpl(server));
 
         Client client = new Client();
-        ObjectSpaceV2 clientRegistry = new ObjectSpaceV2();
+        RemoteSpace clientRegistry = new RemoteSpace();
         register(client.getKryo(), clientRegistry);
         client.addListener(Listener.received(String.class, (connection, object) -> receivedEvents.add((String) object)));
         ClosureTest functions = clientRegistry.createRemote(client, ClosureTest.class);
@@ -398,7 +397,7 @@ public class RmiTest extends KryoNetTestCase {
         List<String> receivedEvents = new ArrayList<>(4);
 
         Server server = new Server();
-        ObjectSpaceV2 serverRegistry = new ObjectSpaceV2();
+        RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
         startEndPoint(server);
         server.bind(tcpPort, udpPort);
@@ -412,7 +411,7 @@ public class RmiTest extends KryoNetTestCase {
         }));
 
         Client client = new Client();
-        ObjectSpaceV2 clientRegistry = new ObjectSpaceV2();
+        RemoteSpace clientRegistry = new RemoteSpace();
         register(client.getKryo(), clientRegistry);
         client.addListener(Listener.received(String.class, (connection, object) -> receivedEvents.add((String) object)));
         C c = clientRegistry.createRemote(client, 3, C.class);
@@ -442,14 +441,14 @@ public class RmiTest extends KryoNetTestCase {
     @Test
     void testAnnotations() throws IOException {
         Server server = new Server();
-        ObjectSpaceV2 serverRegistry = new ObjectSpaceV2();
+        RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
         startEndPoint(server);
         server.bind(tcpPort, udpPort);
         serverRegistry.hostObject(server, new AnnotationsImpl());
 
         Client client = new Client();
-        ObjectSpaceV2 clientRegistry = new ObjectSpaceV2();
+        RemoteSpace clientRegistry = new RemoteSpace();
         register(client.getKryo(), clientRegistry);
         Annotations a = clientRegistry.createRemote(client, Annotations.class);
         startEndPoint(client);
@@ -484,14 +483,14 @@ public class RmiTest extends KryoNetTestCase {
     @Test
     void testDelegate() throws IOException {
         Server server = new Server();
-        ObjectSpaceV2 serverRegistry = new ObjectSpaceV2();
+        RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
         startEndPoint(server);
         server.bind(tcpPort, udpPort);
         serverRegistry.hostObject(server, new SimpleFunctionsImpl(server));
 
         Client client = new Client();
-        ObjectSpaceV2 clientRegistry = new ObjectSpaceV2();
+        RemoteSpace clientRegistry = new RemoteSpace();
         register(client.getKryo(), clientRegistry);
         SimpleFunctions s = clientRegistry.createRemote(client, SimpleFunctions.class, new DelegateObject(clientRegistry, client), RemoteObject.class);
         RemoteObject r = (RemoteObject) s;

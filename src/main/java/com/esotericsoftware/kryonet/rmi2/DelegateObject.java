@@ -26,7 +26,7 @@ import java.lang.annotation.Annotation;
 
 public class DelegateObject implements RemoteObject, RMI.RMISupplier {
 
-    ObjectSpaceV2 space;
+    RemoteSpace space;
     Connection connection;
 
     boolean isLocal = false;
@@ -42,7 +42,7 @@ public class DelegateObject implements RemoteObject, RMI.RMISupplier {
     RMI rmi;
     // RMI Default for return exceptions is never // TODO: make that true
 
-    public DelegateObject(ObjectSpaceV2 space, Connection connection) {
+    public DelegateObject(RemoteSpace space, Connection connection) {
         this.space = space;
         this.connection = connection;
 

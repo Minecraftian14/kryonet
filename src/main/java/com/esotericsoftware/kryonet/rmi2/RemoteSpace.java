@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.esotericsoftware.kryonet.rmi2.ExecutionEvent.obtainEE;
 
-public class ObjectSpaceV2 {
+public class RemoteSpace {
 
     protected int nextObjectId = 0;
     protected int nextMethodId = 0;
@@ -48,7 +48,7 @@ public class ObjectSpaceV2 {
 
     // Class Initialization
 
-    public ObjectSpaceV2 registerRemotable(Class<?> clazz) {
+    public RemoteSpace registerRemotable(Class<?> clazz) {
         if (clsReg.containsKey(clazz)) throw new IllegalArgumentException("Class " + clazz + " is already registered.");
         clsReg.put(clazz, 0);
         registerMethods(clazz);
@@ -67,7 +67,7 @@ public class ObjectSpaceV2 {
         for (Class<?> iSuper : clazz.getInterfaces()) registerMethods(iSuper);
     }
 
-    public ObjectSpaceV2 registerEvents(Kryo kryo) {
+    public RemoteSpace registerEvents(Kryo kryo) {
         kryo.register(InvocationEvent.class, invocationHandler);
         kryo.register(ExecutionEvent.class, executionHandler);
         return this;

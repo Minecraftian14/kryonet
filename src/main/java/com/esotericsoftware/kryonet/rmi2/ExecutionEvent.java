@@ -28,7 +28,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         ee.transactionId = transactionId;
         ee.objectId = objectId;
         ee.method = method;
-        ee.result = ObjectSpaceV2.primitize(result, method.resClass);
+        ee.result = RemoteSpace.primitize(result, method.resClass);
         return ee;
     }
 
@@ -55,9 +55,9 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
 
     static final class Handler extends Serializer<ExecutionEvent> implements Listener {
 
-        final ObjectSpaceV2 registry;
+        final RemoteSpace registry;
 
-        Handler(ObjectSpaceV2 registry) {
+        Handler(RemoteSpace registry) {
             this.registry = registry;
         }
 
@@ -78,7 +78,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
             ee.objectId = input.readVarInt(true);
             ee.method = registry.midToCMet.get(input.readVarInt(true));
             if (ee.method.isResLocal) input.readVarInt(true);
-            else ee.result = ObjectSpaceV2.primitize(kryo.readObjectOrNull(input, ee.method.resClass), ee.method.resClass);
+            else ee.result = RemoteSpace.primitize(kryo.readObjectOrNull(input, ee.method.resClass), ee.method.resClass);
             return ee;
         }
 

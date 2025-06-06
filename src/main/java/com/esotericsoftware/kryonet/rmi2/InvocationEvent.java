@@ -51,9 +51,9 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
 
     static class Handler extends Serializer<InvocationEvent> implements Listener {
 
-        final ObjectSpaceV2 registry;
+        final RemoteSpace registry;
 
-        Handler(ObjectSpaceV2 registry) {
+        Handler(RemoteSpace registry) {
             this.registry = registry;
         }
 
