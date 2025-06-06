@@ -6,23 +6,24 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.kryo.util.Pool;
 import com.esotericsoftware.kryonet.Connection;
+import com.esotericsoftware.kryonet.FrameworkMessage;
 import com.esotericsoftware.kryonet.Listener;
 
-class ExecutionEvent {
+class ExecutionEvent implements FrameworkMessage, AutoCloseable {
 
     int transactionId;
     int objectId;
     CachedMethod method;
     Object result;
 
-    static final Pool<ExecutionEvent> POOL = new Pool<ExecutionEvent>(false, false) {
+    private static final Pool<ExecutionEvent> POOL = new Pool<ExecutionEvent>(false, false) {
         @Override
         protected ExecutionEvent create() {
             return new ExecutionEvent();
         }
     };
 
-    static ExecutionEvent obtain(int transactionId, int objectId, CachedMethod method, Object result) {
+    public static ExecutionEvent obtainEE(int transactionId, int objectId, CachedMethod method, Object result) {
         ExecutionEvent ee = POOL.obtain();
         ee.transactionId = transactionId;
         ee.objectId = objectId;
@@ -31,9 +32,9 @@ class ExecutionEvent {
         return ee;
     }
 
-    public Object getResultAndFree() {
+    public Object use() {
         Object object = result;
-        POOL.free(this);
+        close();
         return object;
     }
 
@@ -45,6 +46,11 @@ class ExecutionEvent {
                ", method=" + method +
                ", result=" + result +
                '}';
+    }
+
+    @Override
+    public void close() {
+        POOL.free(this);
     }
 
     static final class Handler extends Serializer<ExecutionEvent> implements Listener {
@@ -62,7 +68,7 @@ class ExecutionEvent {
             output.writeVarInt(ee.method.id, true);
             if (ee.method.isResLocal) output.writeVarInt((Integer) ee.result, true);
             else kryo.writeObjectOrNull(output, ee.result, ee.method.resClass);
-            POOL.free(ee);
+            ee.close();
         }
 
         @Override

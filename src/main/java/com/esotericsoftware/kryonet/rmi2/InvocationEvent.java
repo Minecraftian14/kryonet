@@ -6,25 +6,26 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.kryo.util.Pool;
 import com.esotericsoftware.kryonet.Connection;
+import com.esotericsoftware.kryonet.FrameworkMessage;
 import com.esotericsoftware.kryonet.Listener;
 
 import java.util.Arrays;
 
-class InvocationEvent {
+class InvocationEvent implements FrameworkMessage, AutoCloseable {
 
     int transactionId;
     int objectId;
     CachedMethod method;
     Object[] params;
 
-    static final Pool<InvocationEvent> POOL = new Pool<InvocationEvent>(false, false) {
+    private static final Pool<InvocationEvent> POOL = new Pool<InvocationEvent>(false, false) {
         @Override
         protected InvocationEvent create() {
             return new InvocationEvent();
         }
     };
 
-    static InvocationEvent obtain(int transactionId, int objectId, CachedMethod method, Object[] args) {
+    static InvocationEvent obtainIE(int transactionId, int objectId, CachedMethod method, Object[] args) {
         InvocationEvent ie = POOL.obtain();
         ie.transactionId = transactionId;
         ie.objectId = objectId;
@@ -43,6 +44,11 @@ class InvocationEvent {
                '}';
     }
 
+    @Override
+    public void close() {
+        POOL.free(this);
+    }
+
     static class Handler extends Serializer<InvocationEvent> implements Listener {
 
         final ObjectSpaceV2 registry;
@@ -59,7 +65,7 @@ class InvocationEvent {
             output.writeVarInt(ie.params.length, true);
             for (int i = 0; i < ie.params.length; i++)
                 kryo.writeObjectOrNull(output, ie.params[i], ie.method.serClasses[i]);
-            POOL.free(ie);
+            ie.close();
         }
 
         @Override

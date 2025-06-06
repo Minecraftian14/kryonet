@@ -2,11 +2,27 @@ package com.esotericsoftware.kryonet.rmi2;
 
 import com.esotericsoftware.kryo.util.ObjectMap;
 
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public class MultiResultLock<Type> {
 
-    final ObjectMap<Integer, CompletableFuture<Type>> transactions = new ObjectMap<>();
+    private final ObjectMap<Integer, CompletableFuture<Type>> transactions = new ObjectMap<>();
+
+    public boolean containsKey(int lastTransactionId) {
+        synchronized (transactions) {
+            return transactions.containsKey(lastTransactionId);
+        }
+    }
+
+    public boolean containsValue(int lastTransactionId) {
+        synchronized (transactions) {
+            return transactions.containsKey(lastTransactionId)
+                   && transactions.get(lastTransactionId).isDone();
+        }
+    }
 
     public void write(int transactionId, Type object) {
         synchronized (transactions) {
@@ -16,7 +32,7 @@ public class MultiResultLock<Type> {
         }
     }
 
-    public Type read(int transactionId) {
+    public Type read(int transactionId, long millis) {
         CompletableFuture<Type> future;
         synchronized (transactions) {
             if (transactions.containsKey(transactionId))
@@ -24,7 +40,7 @@ public class MultiResultLock<Type> {
             else transactions.put(transactionId, future = new CompletableFuture<>());
         }
         try {
-            return future.get(3, TimeUnit.SECONDS);
+            return future.get(millis, TimeUnit.MILLISECONDS);
         } catch (InterruptedException | ExecutionException | TimeoutException e) {
             synchronized (transactions) {
                 transactions.remove(transactionId);

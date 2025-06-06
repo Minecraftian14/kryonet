@@ -20,22 +20,42 @@ class CachedMethod {
         this.id = id;
         this.reflection = method;
 
+        boolean isFunctionalInterface = method.getDeclaringClass().isAnnotationPresent(FunctionalInterface.class);
+
         this.rmi = RMI.Helper.getRMI(method);
         this.argClasses = method.getParameterTypes();
         this.serClasses = argClasses.clone();
         this.resClass = method.getReturnType();
-        this.isResLocal = method.isAnnotationPresent(RMI.Closure.class);
+        this.isResLocal = method.isAnnotationPresent(RMI.Closure.class)
+                          || (isFunctionalInterface && resClass.isAnnotationPresent(FunctionalInterface.class));
 
         Parameter[] parameters = method.getParameters();
-        int localParamCount = 0;
-        for (Parameter parameter : parameters)
-            if (RMI.Helper.isLocal(parameter))
-                localParamCount++;
-        this.localParamIndices = new int[localParamCount];
-        localParamCount = 0;
-        for (int i = 0; i < parameters.length; i++)
-            if (RMI.Helper.isLocal(parameters[i]))
-                localParamIndices[localParamCount++] = i;
+
+        if (isFunctionalInterface) {
+
+            int localParamCount = 0;
+            for (Parameter parameter : parameters)
+                if (RMI.Helper.isLocal(parameter) || parameter.getType().isAnnotationPresent(FunctionalInterface.class))
+                    localParamCount++;
+            this.localParamIndices = new int[localParamCount];
+            localParamCount = 0;
+            for (int i = 0; i < parameters.length; i++)
+                if (RMI.Helper.isLocal(parameters[i]) || parameters[i].getType().isAnnotationPresent(FunctionalInterface.class))
+                    localParamIndices[localParamCount++] = i;
+
+        } else {
+
+            int localParamCount = 0;
+            for (Parameter parameter : parameters)
+                if (RMI.Helper.isLocal(parameter))
+                    localParamCount++;
+            this.localParamIndices = new int[localParamCount];
+            localParamCount = 0;
+            for (int i = 0; i < parameters.length; i++)
+                if (RMI.Helper.isLocal(parameters[i]))
+                    localParamIndices[localParamCount++] = i;
+
+        }
 
         // BOGUS TRICK...
         for (int paramIndex : localParamIndices)
@@ -60,9 +80,5 @@ class CachedMethod {
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException(x, e);
         }
-    }
-
-    public boolean returnsNotRequired() {
-        return void.class.equals(resClass) || rmi.returnsNotRequired();
     }
 }
