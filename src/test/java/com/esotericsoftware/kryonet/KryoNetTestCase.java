@@ -1,15 +1,15 @@
 /* Copyright (c) 2008, Nathan Sweet
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
  * conditions are met:
- * 
+ *
  * - Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
  * - Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
  * disclaimer in the documentation and/or other materials provided with the distribution.
  * - Neither the name of Esoteric Software nor the names of its contributors may be used to endorse or promote products derived
  * from this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
  * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
  * SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -20,9 +20,11 @@
 package com.esotericsoftware.kryonet;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.minlog.Log;
 import com.esotericsoftware.minlog.Log.Logger;
 
@@ -120,4 +122,28 @@ abstract public class KryoNetTestCase {
 		} catch (InterruptedException ignored) {
 		}
 	}
+
+    /**
+     * Registers the same classes in the same order on both the client and
+     * server.
+     */
+    protected void register(Kryo kryo) {
+        kryo.register(Object.class); // Needed for Object#toString, hashCode,
+        // etc.
+
+        kryo.register(UnsupportedOperationException.class);
+        // Needed for throwable:
+        kryo.register(StackTraceElement[].class);
+        kryo.register(StackTraceElement.class);
+        //@formatter:off
+//		kryo.register(
+//				Collections.unmodifiableList(new ArrayList<>(1)).getClass(),
+//				new JavaSerializer()); // -> Java 1.8
+        //@formatter:on
+        kryo.register(Collections.EMPTY_LIST.getClass()); // -> Java 1.9+
+        kryo.setReferences(true); // Needed for UnsupportedOperationException,
+        // which has a circular reference in the
+        // cause field.
+    }
+
 }
