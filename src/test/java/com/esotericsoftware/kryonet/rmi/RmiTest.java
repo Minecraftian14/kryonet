@@ -22,14 +22,9 @@ package com.esotericsoftware.kryonet.rmi;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.DoubleAdder;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.serializers.JavaSerializer;
-import com.esotericsoftware.kryo.util.IntArray;
 import com.esotericsoftware.kryonet.Client;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.KryoNetTestCase;
@@ -166,47 +161,6 @@ public class RmiTest extends KryoNetTestCase {
 							test.moo("" + i);
 						for (int i = 0; i < 256; i++)
 							test.moo("" + i, 0);
-
-                        Random random = new Random();
-                        for (int i = 0; i < 64; i++) {
-                            int offset = random.nextInt(0, 99);
-
-                            AtomicInteger count = new AtomicInteger();
-                            assertEquals(3000 + offset, test.callback(offset, count::incrementAndGet));
-                            assertEquals(2, count.intValue());
-
-                            IntArray array = new IntArray(2);
-                            assertEquals(3000 + offset, test.monoCallback(offset, array::add));
-                            assertEquals(1000 + offset, array.get(0));
-                            assertEquals(2000 + offset, array.get(1));
-
-                            array.clear();
-                            List<String> words = new ArrayList<>();
-                            assertEquals(3000 + offset, test.biCallback(offset, (in, st) -> {
-                                array.add(in);
-                                words.add(st);
-                            }));
-                            assertEquals(1000 + offset, array.get(0));
-                            assertEquals(2000 + offset, array.get(1));
-                            assertEquals("[" + offset, words.get(0));
-                            assertEquals(offset + "]", words.get(1));
-
-                            array.clear();
-                            words.clear();
-                            DoubleAdder adder = new DoubleAdder();
-                            assertEquals(3000 + offset, test.triCallback(offset, (in, st, fl) -> {
-                                array.add(in);
-                                words.add(st);
-                                adder.add(fl);
-                            }));
-                            assertEquals(1000 + offset, array.get(0));
-                            assertEquals(2000 + offset, array.get(1));
-                            assertEquals("[" + offset, words.get(0));
-                            assertEquals(offset + "]", words.get(1));
-                            assertEquals(offset * 0.75f, adder.floatValue());
-
-                        }
-
 						connection.sendTCP(new MessageWithTestObject());
 					}
 				}.start();
@@ -306,30 +260,12 @@ public class RmiTest extends KryoNetTestCase {
 		}.start();
 	}
 
-	/**
-	 * Registers the same classes in the same order on both the client and
-	 * server.
-	 */
-	public static void register(Kryo kryo) {
-		kryo.register(Object.class); // Needed for Object#toString, hashCode,
-										// etc.
+    @Override
+	public void register(Kryo kryo) {
 		kryo.register(TestObject.class);
 		kryo.register(TestObjectImpl.class);
 		kryo.register(MessageWithTestObject.class);
-
-		kryo.register(UnsupportedOperationException.class);
-		// Needed for throwable:
-		kryo.register(StackTraceElement[].class);
-		kryo.register(StackTraceElement.class);
-		//@formatter:off
-//		kryo.register(
-//				Collections.unmodifiableList(new ArrayList<>(1)).getClass(),
-//				new JavaSerializer()); // -> Java 1.8
-		//@formatter:on
-		kryo.register(Collections.EMPTY_LIST.getClass()); // -> Java 1.9+
-		kryo.setReferences(true); // Needed for UnsupportedOperationException,
-									// which has a circular reference in the
-									// cause field.
+        super.register(kryo);
 
 		ObjectSpace.registerClasses(kryo);
 	}
@@ -346,14 +282,6 @@ public class RmiTest extends KryoNetTestCase {
 		float other();
 
 		float slow();
-
-        public int callback(int x, Callback callback);
-
-        public int monoCallback(int x, MonoCallback<Integer> callback);
-
-        public int biCallback(int x, BiCallback<Integer, String> callback);
-
-        public int triCallback(int x, TriCallback<Integer, String, Float> callback);
 	}
 
 	public static class TestObjectImpl implements TestObject {
@@ -399,34 +327,6 @@ public class RmiTest extends KryoNetTestCase {
 			}
 			return 666;
 		}
-
-        public int callback(int x, Callback callback) {
-            System.out.println("Non: " + x);
-            callback.call();
-            callback.call();
-            return x + 3000;
-        }
-
-        public int monoCallback(int x, MonoCallback<Integer> callback) {
-            System.out.println("Mono: " + x);
-            callback.call(x + 1000);
-            callback.call(x + 2000);
-            return x + 3000;
-        }
-
-        public int biCallback(int x, BiCallback<Integer, String> callback) {
-            System.out.println("Bi: " + x);
-            callback.call(x + 1000, "[" + x);
-            callback.call(x + 2000, x + "]");
-            return x + 3000;
-        }
-
-        public int triCallback(int x, TriCallback<Integer, String, Float> callback) {
-            System.out.println("Tri: " + x);
-            callback.call(x + 1000, "[" + x, x * 0.5f);
-            callback.call(x + 2000, x + "]", x * 0.25f);
-            return x + 3000;
-        }
 	}
 
 	public static class MessageWithTestObject {

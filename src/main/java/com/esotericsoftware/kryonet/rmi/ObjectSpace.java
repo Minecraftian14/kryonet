@@ -1,15 +1,15 @@
 /* Copyright (c) 2008, Nathan Sweet
  * All rights reserved.
- *
+ * 
  * Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
  * conditions are met:
- *
+ * 
  * - Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
  * - Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
  * disclaimer in the documentation and/or other materials provided with the distribution.
  * - Neither the name of Esoteric Software nor the names of its contributors may be used to endorse or promote products derived
  * from this software without specific prior written permission.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING,
  * BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
  * SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
@@ -31,7 +31,11 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -104,8 +108,7 @@ public class ObjectSpace {
 							// in this ObjectSpace.
 			}
 			final InvokeMethod invokeMethod = (InvokeMethod) object;
-            final CachedMethod cachedMethod = invokeMethod.cachedMethod;
-            final Object target = idToObject.get(invokeMethod.objectID);
+			final Object target = idToObject.get(invokeMethod.objectID);
 			if (target == null) {
 				if (WARN)
 					warn("kryonet",
@@ -113,32 +116,13 @@ public class ObjectSpace {
 									+ invokeMethod.objectID);
 				return;
 			}
-            List<InvokeCallbackResult> invocations = new ArrayList<>();
-            CachedCallback[] callbacks = cachedMethod.callbacks;
-            for (int i = 0; i < callbacks.length; i++) {
-                CachedCallback callback = callbacks[i];
-                int methodParamIndex = callback.methodParamIndex;
-                int paramCount = callback.paramCount;
-                if (paramCount == 0)
-                    invokeMethod.args[methodParamIndex] = (Callback) (() ->
-                        invocations.add(new InvokeCallbackResult(methodParamIndex, new Object[0])));
-                else if (paramCount == 1)
-                    invokeMethod.args[methodParamIndex] = (MonoCallback) ((t) ->
-                        invocations.add(new InvokeCallbackResult(methodParamIndex, new Object[] {t})));
-                else if (paramCount == 2)
-                    invokeMethod.args[methodParamIndex] = (BiCallback) ((t, u) ->
-                        invocations.add(new InvokeCallbackResult(methodParamIndex, new Object[] {t, u})));
-                else if (paramCount == 3)
-                    invokeMethod.args[methodParamIndex] = (TriCallback) ((t, u, v) ->
-                        invocations.add(new InvokeCallbackResult(methodParamIndex, new Object[] {t, u, v})));
-            }
 			if (executor == null)
-				invoke(connection, target, invokeMethod, invocations);
+				invoke(connection, target, invokeMethod);
 			else {
 				executor.execute(new Runnable() {
 					@Override
 					public void run() {
-						invoke(connection, target, invokeMethod, invocations);
+						invoke(connection, target, invokeMethod);
 					}
 				});
 			}
@@ -315,7 +299,7 @@ public class ObjectSpace {
 	 *            The remote side of this connection requested the invocation.
 	 */
 	protected void invoke(Connection connection, Object target,
-			InvokeMethod invokeMethod, List<InvokeCallbackResult> invocations) {
+			InvokeMethod invokeMethod) {
 		if (DEBUG) {
 			String argString = "";
 			if (invokeMethod.args != null) {
@@ -359,7 +343,6 @@ public class ObjectSpace {
 		InvokeMethodResult invokeMethodResult = new InvokeMethodResult();
 		invokeMethodResult.objectID = invokeMethod.objectID;
 		invokeMethodResult.responseID = (byte) responseID;
-        invokeMethodResult.invocations = invocations.toArray(new InvokeCallbackResult[invocations.size()]);
 
 		// Do not return non-primitives if transmitReturnValue is false.
 		if (!transmitReturnValue && !invokeMethod.cachedMethod.method
@@ -436,7 +419,6 @@ public class ObjectSpace {
 		private boolean remoteToString;
 		private boolean udp;
 		private Byte lastResponseID;
-        private Object[] lastResponseArgs;
 		private byte nextResponseId = 1;
 		private final Listener responseListener;
 
@@ -522,7 +504,7 @@ public class ObjectSpace {
 					if (lastResponseID == null)
 						throw new IllegalStateException(
 								"There is no last response to wait for.");
-					return waitForResponse(lastResponseID, lastResponseArgs);
+					return waitForResponse(lastResponseID);
 				case "hasLastResponse":
 					if (lastResponseID == null)
 						throw new IllegalStateException(
@@ -540,7 +522,7 @@ public class ObjectSpace {
 							&& nonBlocking)
 						throw new IllegalStateException(
 								"This RemoteObject is currently set to ignore all responses.");
-					return waitForResponse((Byte) args[0], null);
+					return waitForResponse((Byte) args[0]);
 				case "hasResponse":
 					synchronized (this) {
 						return responseTable[(Byte) args[0]] != null;
@@ -571,15 +553,6 @@ public class ObjectSpace {
 			}
 			if (invokeMethod.cachedMethod == null)
 				throw new KryoNetException("Method not found: " + method);
-
-            CachedCallback[] cachedCallbacks = invokeMethod.cachedMethod.callbacks;
-            Object[] callbacks = new Object[cachedCallbacks.length];
-            for (int i = 0; i < cachedCallbacks.length; i++) {
-                CachedCallback callback = cachedCallbacks[i];
-                int methodParamIndex = callback.methodParamIndex;
-                callbacks[i] = args[methodParamIndex];
-                args[methodParamIndex] = null;
-            }
 
 			// A invocation doesn't need a response if it's async and no return
 			// values or exceptions are wanted back.
@@ -621,16 +594,8 @@ public class ObjectSpace {
 								+ ") (" + length + ")");
 			}
 
-            for (int i = 0; i < cachedCallbacks.length; i++) {
-                CachedCallback callback = cachedCallbacks[i];
-                int methodParamIndex = callback.methodParamIndex;
-                args[methodParamIndex] = callbacks[i];
-            }
-
 			lastResponseID = (byte) (invokeMethod.responseData
 					& responseIdMask);
-            lastResponseArgs = args;
-
 			if (nonBlocking || udp) {
 				Class<?> returnType = method.getReturnType();
 				if (returnType.isPrimitive()) {
@@ -654,7 +619,7 @@ public class ObjectSpace {
 				return null;
 			}
 			try {
-				Object result = waitForResponse(lastResponseID, args);
+				Object result = waitForResponse(lastResponseID);
 				if (result instanceof Exception)
 					throw (Exception) result;
 				else
@@ -671,7 +636,7 @@ public class ObjectSpace {
 			}
 		}
 
-		private Object waitForResponse(byte responseID, Object[] args) {
+		private Object waitForResponse(byte responseID) {
 			if (connection.getEndPoint().getUpdateThread() == Thread
 					.currentThread())
 				throw new IllegalStateException(
@@ -687,24 +652,6 @@ public class ObjectSpace {
 				}
 				if (invokeMethodResult != null) {
 					lastResponseID = null;
-                    lastResponseArgs = null;
-
-                    if (args != null) {
-                        InvokeCallbackResult[] invocations = invokeMethodResult.invocations;
-                        for (InvokeCallbackResult invocation : invocations) {
-                            int methodParamIndex = invocation.methodParamIndex;
-                            int paramCount = invocation.arguments.length;
-                            if (paramCount == 0)
-                                ((Callback) args[methodParamIndex]).call();
-                            else if (paramCount == 1)
-                                ((MonoCallback) args[methodParamIndex]).call(invocation.arguments[0]);
-                            else if (paramCount == 2)
-                                ((BiCallback) args[methodParamIndex]).call(invocation.arguments[0], invocation.arguments[1]);
-                            else if (paramCount == 3)
-                                ((TriCallback) args[methodParamIndex]).call(invocation.arguments[0], invocation.arguments[1], invocation.arguments[2]);
-                        }
-                    }
-
 					return invokeMethodResult.result;
 				} else {
 					if (remaining <= 0)
@@ -804,23 +751,9 @@ public class ObjectSpace {
 		public int objectID;
 		public byte responseID;
 		public Object result;
-        InvokeCallbackResult[] invocations;
 	}
 
-    static public class InvokeCallbackResult implements FrameworkMessage {
-        public int methodParamIndex;
-        public Object[] arguments;
-
-        public InvokeCallbackResult() {
-        }
-
-        public InvokeCallbackResult(int methodParamIndex, Object[] arguments) {
-            this.methodParamIndex = methodParamIndex;
-            this.arguments = arguments;
-        }
-    }
-
-    static CachedMethod[] getMethods(Kryo kryo, Class<?> type) {
+	static CachedMethod[] getMethods(Kryo kryo, Class<?> type) {
 		CachedMethod[] cachedMethods = methodCache.get(type); // Maybe should
 																// cache per
 																// Kryo
@@ -910,22 +843,7 @@ public class ObjectSpace {
 					cachedMethod.serializers[ii] = kryo
 							.getSerializer(parameterTypes[ii]);
 
-            List<CachedCallback> callbacks = new ArrayList<>();
-            Class<?>[] parameters = method.getParameterTypes();
-            for (int ii = 0; ii < parameters.length; ii++) {
-                Class<?> parameter = parameters[ii];
-                if (Callback.class.isAssignableFrom(parameter))
-                    callbacks.add(new CachedCallback(ii,0));
-                else if (MonoCallback.class.isAssignableFrom(parameter))
-                    callbacks.add(new CachedCallback(ii,1));
-                else if (BiCallback.class.isAssignableFrom(parameter))
-                    callbacks.add(new CachedCallback(ii,2));
-                else if (TriCallback.class.isAssignableFrom(parameter))
-                    callbacks.add(new CachedCallback(ii,3));
-            }
-            cachedMethod.callbacks = callbacks.toArray(new CachedCallback[callbacks.size()]);
-
-            cachedMethods[i] = cachedMethod;
+			cachedMethods[i] = cachedMethod;
 		}
 		methodCache.put(type, cachedMethods);
 		return cachedMethods;
@@ -986,52 +904,26 @@ public class ObjectSpace {
 		kryo.register(Object[].class);
 		kryo.register(InvokeMethod.class);
 
-        kryo.register(InvokeCallbackResult.class, new Serializer<InvokeCallbackResult>(true, false) {
-            @Override
-            public void write(Kryo kryo, Output output, InvokeCallbackResult icr) {
-                output.writeByte(icr.methodParamIndex);
-                output.writeByte(icr.arguments.length);
-                for (Object arg : icr.arguments)
-                    kryo.writeClassAndObject(output, arg);
-            }
+		FieldSerializer<InvokeMethodResult> resultSerializer = new FieldSerializer<InvokeMethodResult>(
+				kryo, InvokeMethodResult.class) {
+			@Override
+			public void write(Kryo kryo, Output output,
+					InvokeMethodResult result) {
+				super.write(kryo, output, result);
+				output.writeInt(result.objectID, true);
+			}
 
-            @Override
-            public InvokeCallbackResult read(Kryo kryo, Input input, Class<? extends InvokeCallbackResult> type) {
-                InvokeCallbackResult icr = new InvokeCallbackResult();
-                icr.methodParamIndex = input.readByteUnsigned();
-                icr.arguments = new Object[input.readByteUnsigned()];
-                for (int i = 0; i < icr.arguments.length; i++)
-                    icr.arguments[i] = kryo.readClassAndObject(input);
-                return icr;
-            }
-        });
+			@Override
+			public InvokeMethodResult read(Kryo kryo, Input input,
+					Class<? extends InvokeMethodResult> type) {
+				InvokeMethodResult result = super.read(kryo, input, type);
+				result.objectID = input.readInt(true);
+				return result;
+			}
 
-        FieldSerializer<InvokeMethodResult> resultSerializer = new FieldSerializer<InvokeMethodResult>(kryo,
-            InvokeMethodResult.class) {
-            public void write (Kryo kryo, Output output, InvokeMethodResult result) {
-                super.write(kryo, output, result);
-                output.writeInt(result.objectID, true);
-                if (result.invocations == null) {
-                    output.writeVarInt(0, true);
-                } else {
-                    output.writeVarInt(result.invocations.length, true);
-                    for (int i = 0; i < result.invocations.length; i++)
-                        kryo.writeObjectOrNull(output, result.invocations[i], InvokeCallbackResult.class);
-                }
-            }
-
-            public InvokeMethodResult read (Kryo kryo, Input input, Class type) {
-                InvokeMethodResult result = super.read(kryo, input, type);
-                result.objectID = input.readInt(true);
-                result.invocations = new InvokeCallbackResult[input.readVarInt(true)];
-                for (int i = 0; i < result.invocations.length; i++)
-                    result.invocations[i] = kryo.readObjectOrNull(input, InvokeCallbackResult.class);
-                return result;
-            }
-        };
-        resultSerializer.removeField("objectID");
-        resultSerializer.removeField("invocations");
-        kryo.register(InvokeMethodResult.class, resultSerializer);
+		};
+		resultSerializer.removeField("objectID");
+		kryo.register(InvokeMethodResult.class, resultSerializer);
 
 		kryo.register(InvocationHandler.class, new Serializer() {
 			@Override
@@ -1072,7 +964,6 @@ public class ObjectSpace {
 		int methodClassID;
 		int methodIndex;
 		Serializer<?>[] serializers;
-        CachedCallback[] callbacks;
 
 		public Object invoke(Object target, Object[] args)
 				throws IllegalAccessException, InvocationTargetException {
@@ -1080,20 +971,7 @@ public class ObjectSpace {
 		}
 	}
 
-    static class CachedCallback {
-        int methodParamIndex;
-        int paramCount;
-
-        public CachedCallback() {
-        }
-
-        public CachedCallback(int methodParamIndex, int paramCount) {
-            this.methodParamIndex = methodParamIndex;
-            this.paramCount = paramCount;
-        }
-    }
-
-    static class AsmCachedMethod extends CachedMethod {
+	static class AsmCachedMethod extends CachedMethod {
 		MethodAccess methodAccess;
 		int methodAccessIndex = -1;
 

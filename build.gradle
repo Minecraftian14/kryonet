@@ -1,7 +1,7 @@
 apply plugin: "java-library"
 apply plugin: 'maven-publish'
 
-group = 'com.esotericsoftware'
+group = 'com.github.crykn'
 version '2.22.8'
 
 sourceCompatibility = 1.8
