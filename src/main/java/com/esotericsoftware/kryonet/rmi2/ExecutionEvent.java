@@ -9,6 +9,8 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.FrameworkMessage;
 import com.esotericsoftware.kryonet.Listener;
 
+import static com.esotericsoftware.kryonet.rmi2.RMI.TransmitExceptions.Transmission.GET_WHOLE;
+
 class ExecutionEvent implements FrameworkMessage, AutoCloseable {
 
     int transactionId;
@@ -35,6 +37,11 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
     public Object use() {
         Object object = result;
         close();
+        if (objectId < 0)
+            if (method.rmi.transmitExceptions().equals(GET_WHOLE))
+                throw new RuntimeException((Throwable) object);
+            else throw new RuntimeException((String) object);
+
         return object;
     }
 
@@ -64,9 +71,13 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         @Override
         public void write(Kryo kryo, Output output, ExecutionEvent ee) {
             output.writeVarInt(ee.transactionId, true);
-            output.writeVarInt(ee.objectId, true);
+            output.writeVarInt(ee.objectId, false);
             output.writeVarInt(ee.method.id, true);
             if (ee.method.isResLocal) output.writeVarInt((Integer) ee.result, true);
+            else if (ee.objectId < 0)
+                if (ee.method.rmi.transmitExceptions().equals(GET_WHOLE))
+                    kryo.writeObjectOrNull(output, ee.result, Throwable.class);
+                else kryo.writeObjectOrNull(output, ee.result, String.class);
             else kryo.writeObjectOrNull(output, ee.result, ee.method.resClass);
             ee.close();
         }
@@ -75,9 +86,13 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         public ExecutionEvent read(Kryo kryo, Input input, Class<? extends ExecutionEvent> aClass) {
             ExecutionEvent ee = POOL.obtain();
             ee.transactionId = input.readVarInt(true);
-            ee.objectId = input.readVarInt(true);
+            ee.objectId = input.readVarInt(false);
             ee.method = registry.midToCMet.get(input.readVarInt(true));
             if (ee.method.isResLocal) input.readVarInt(true);
+            else if (ee.objectId < 0)
+                if (ee.method.rmi.transmitExceptions().equals(GET_WHOLE))
+                    ee.result = kryo.readObjectOrNull(input, Throwable.class);
+                else ee.result = kryo.readObjectOrNull(input, String.class);
             else ee.result = RemoteSpace.primitize(kryo.readObjectOrNull(input, ee.method.resClass), ee.method.resClass);
             return ee;
         }

@@ -34,13 +34,12 @@ public class DelegateObject implements RemoteObject, RMI.RMISupplier {
     boolean isNonBlocking = false;
     boolean returnsNotRequired = false;
     int responseTimeout = 3000;
-    boolean transmitExceptions = true;
+    RMI.TransmitExceptions.Transmission transmitExceptions = RMI.TransmitExceptions.Transmission.TO_STRING;
     boolean remoteToString = false;
     boolean remoteHashCode = false;
     boolean closed = false;
 
     RMI rmi;
-    // RMI Default for return exceptions is never // TODO: make that true
 
     public DelegateObject(RemoteSpace space, Connection connection) {
         this.space = space;
@@ -79,18 +78,18 @@ public class DelegateObject implements RemoteObject, RMI.RMISupplier {
             }
 
             @Override
-            public boolean transmitExceptions() {
+            public TransmitExceptions.Transmission transmitExceptions() {
                 return transmitExceptions;
             }
 
             @Override
-            public boolean remoteToString() {
-                return remoteToString;
+            public boolean delegatedToString() {
+                return !remoteToString;
             }
 
             @Override
-            public boolean remoteHashCode() {
-                return remoteHashCode;
+            public boolean delegatedHashCode() {
+                return !remoteHashCode;
             }
 
             @Override
@@ -117,7 +116,8 @@ public class DelegateObject implements RemoteObject, RMI.RMISupplier {
 
     @Override
     public void setTransmitExceptions(boolean transmit) {
-        transmitExceptions = transmit;
+        if (transmit) transmitExceptions = RMI.TransmitExceptions.Transmission.TO_STRING;
+        else transmitExceptions = RMI.TransmitExceptions.Transmission.LOCAL_ONLY;
     }
 
     @Override
@@ -176,7 +176,7 @@ public class DelegateObject implements RemoteObject, RMI.RMISupplier {
     }
 
     @Override
-    public RMI getRMI() {
+    public RMI getRMI(RMI defaultRmi) {
         return rmi;
     }
 }

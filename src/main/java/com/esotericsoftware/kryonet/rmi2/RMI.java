@@ -18,16 +18,18 @@ public @interface RMI {
 
     int responseTimeout() default 3000;
 
-    boolean transmitExceptions() default true;
+    TransmitExceptions.Transmission transmitExceptions() default TransmitExceptions.Transmission.TO_STRING;
 
-    boolean remoteToString() default false;
+    boolean delegatedToString() default false;
 
-    boolean remoteHashCode() default false;
+    boolean delegatedHashCode() default false;
 
     boolean closed() default false;
 
     interface RMISupplier {
-        RMI getRMI();
+        default RMI getRMI(RMI defaultRmi) {
+            return defaultRmi;
+        }
     }
 
     class RMIImpl implements RMI {
@@ -37,21 +39,21 @@ public @interface RMI {
         final boolean isNonBlocking;
         final boolean returnsNotRequired;
         final int responseTimeout;
-        final boolean transmitExceptions;
-        final boolean remoteToString;
-        final boolean remoteHashCode;
+        final TransmitExceptions.Transmission transmitExceptions;
+        final boolean delegatedToString;
+        final boolean delegatedHashCode;
         final boolean closed;
         final Class<? extends Annotation> annotationType;
 
-        public RMIImpl(boolean isLocal, boolean isUdp, boolean isNonBlocking, boolean returnsNotRequired, int responseTimeout, boolean transmitExceptions, boolean remoteToString, boolean remoteHashCode, boolean closed, Class<? extends Annotation> annotationType) {
+        public RMIImpl(boolean isLocal, boolean isUdp, boolean isNonBlocking, boolean returnsNotRequired, int responseTimeout, TransmitExceptions.Transmission transmitExceptions, boolean delegatedToString, boolean delegatedHashCode, boolean closed, Class<? extends Annotation> annotationType) {
             this.isLocal = isLocal;
             this.isUdp = isUdp;
             this.isNonBlocking = isNonBlocking;
             this.returnsNotRequired = returnsNotRequired;
             this.responseTimeout = responseTimeout;
             this.transmitExceptions = transmitExceptions;
-            this.remoteToString = remoteToString;
-            this.remoteHashCode = remoteHashCode;
+            this.delegatedToString = delegatedToString;
+            this.delegatedHashCode = delegatedHashCode;
             this.closed = closed;
             this.annotationType = annotationType;
         }
@@ -79,18 +81,18 @@ public @interface RMI {
         }
 
         @Override
-        public boolean transmitExceptions() {
+        public TransmitExceptions.Transmission transmitExceptions() {
             return transmitExceptions;
         }
 
         @Override
-        public boolean remoteToString() {
-            return remoteToString;
+        public boolean delegatedToString() {
+            return delegatedToString;
         }
 
         @Override
-        public boolean remoteHashCode() {
-            return remoteHashCode;
+        public boolean delegatedHashCode() {
+            return delegatedHashCode;
         }
 
         @Override
@@ -104,7 +106,7 @@ public @interface RMI {
 
         @Override
         public String toString() {
-            return "RMIImpl{" + "isLocal=" + isLocal + ", isUdp=" + isUdp + ", isNonBlocking=" + isNonBlocking + ", returnsNotRequired=" + returnsNotRequired + ", responseTimeout=" + responseTimeout + ", transmitExceptions=" + transmitExceptions + ", remoteToString=" + remoteToString + ", remoteHashCode=" + remoteHashCode + ", closed=" + closed + ", annotationType=" + annotationType + '}';
+            return "RMIImpl{" + "isLocal=" + isLocal + ", isUdp=" + isUdp + ", isNonBlocking=" + isNonBlocking + ", returnsNotRequired=" + returnsNotRequired + ", responseTimeout=" + responseTimeout + ", transmitExceptions=" + transmitExceptions + ", remoteToString=" + delegatedToString + ", remoteHashCode=" + delegatedHashCode + ", closed=" + closed + ", annotationType=" + annotationType + '}';
         }
     }
 
@@ -116,9 +118,9 @@ public @interface RMI {
             boolean isNonBlocking = false;
             boolean returnsNotRequired = false;
             int responseTimeout = 3000;
-            boolean transmitExceptions = true;
-            boolean remoteToString = false;
-            boolean remoteHashCode = false;
+            TransmitExceptions.Transmission transmitExceptions = TransmitExceptions.Transmission.TO_STRING;
+            boolean delegatedToString = false;
+            boolean delegatedHashCode = false;
             boolean closed = false;
             Class<? extends Annotation> annotationType = RMI.class;
 
@@ -131,8 +133,8 @@ public @interface RMI {
                 responseTimeout = rmi.responseTimeout();
                 annotationType = rmi.annotationType();
                 transmitExceptions = rmi.transmitExceptions();
-                remoteToString = rmi.remoteToString();
-                remoteHashCode = rmi.remoteHashCode();
+                delegatedToString = rmi.delegatedToString();
+                delegatedHashCode = rmi.delegatedHashCode();
                 closed = rmi.closed();
             }
 
@@ -141,12 +143,12 @@ public @interface RMI {
             isNonBlocking |= method.isAnnotationPresent(NonBlocking.class);
             returnsNotRequired |= method.isAnnotationPresent(NoReturns.class);
             returnsNotRequired |= void.class.equals(method.getReturnType());
-            transmitExceptions &= method.isAnnotationPresent(LocalExceptions.class);
-            remoteToString |= method.isAnnotationPresent(RemoteToString.class);
-            remoteHashCode |= method.isAnnotationPresent(RemoteHashCode.class);
+            if (method.isAnnotationPresent(TransmitExceptions.class)) transmitExceptions = method.getAnnotation(TransmitExceptions.class).value();
+            delegatedToString |= method.isAnnotationPresent(DelegatedToString.class);
+            delegatedHashCode |= method.isAnnotationPresent(DelegatedHashCode.class);
             if (method.isAnnotationPresent(ResponseTimeout.class)) responseTimeout = method.getAnnotation(ResponseTimeout.class).value();
 
-            return new RMIImpl(isLocal, isUdp, isNonBlocking, returnsNotRequired, responseTimeout, transmitExceptions, remoteToString, remoteHashCode, closed, annotationType);
+            return new RMIImpl(isLocal, isUdp, isNonBlocking, returnsNotRequired, responseTimeout, transmitExceptions, delegatedToString, delegatedHashCode, closed, annotationType);
         }
 
         static boolean isLocal(Parameter parameter) {
@@ -199,17 +201,22 @@ public @interface RMI {
 
     @Retention(RetentionPolicy.RUNTIME)
     @Target(ElementType.METHOD)
-    @interface LocalExceptions {
+    @interface TransmitExceptions {
+        enum Transmission {
+            LOCAL_ONLY, TO_STRING, GET_MESSAGE, GET_WHOLE
+        }
+
+        Transmission value() default Transmission.TO_STRING;
     }
 
     @Retention(RetentionPolicy.RUNTIME)
-    @Target(ElementType.METHOD)
-    @interface RemoteToString {
+    @Target(ElementType.TYPE)
+    @interface DelegatedToString {
     }
 
     @Retention(RetentionPolicy.RUNTIME)
-    @Target(ElementType.METHOD)
-    @interface RemoteHashCode {
+    @Target(ElementType.TYPE)
+    @interface DelegatedHashCode {
     }
 
 }

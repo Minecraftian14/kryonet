@@ -1,5 +1,7 @@
 package com.esotericsoftware.kryonet.rmi2;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -7,7 +9,7 @@ import java.util.Arrays;
 
 class CachedMethod {
     final int id;
-    final Method reflection;
+    private final Method reflection;
     final RMI rmi;
     final Class<?>[] argClasses;
     final Class<?>[] serClasses;
@@ -72,13 +74,28 @@ class CachedMethod {
                '}';
     }
 
-    Object invokeMethod(Object object, InvocationEvent it) {
-        String x = "CachedMethod.invokeMethod(" + object + ",\n" + it + ")";
+    public Object invokeMethod(Object object, InvocationEvent ie) {
         try {
-            System.out.println(x);
-            return reflection.invoke(object, it.params);
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new RuntimeException(x, e);
+            return reflection.invoke(object, ie.params);
+        } catch (InvocationTargetException e) {
+            if (rmi.transmitExceptions().equals(RMI.TransmitExceptions.Transmission.LOCAL_ONLY))
+                throw new RuntimeException(e.getCause());
+            else if (rmi.transmitExceptions().equals(RMI.TransmitExceptions.Transmission.TO_STRING)) {
+                ie.objectId = ~ie.objectId; // ie is instantly closed where this function is called, and the negative value is consumed by ee
+                e.printStackTrace();
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                e.getCause().printStackTrace(pw);
+                return sw.toString();
+            } else if (rmi.transmitExceptions().equals(RMI.TransmitExceptions.Transmission.GET_MESSAGE)) {
+                ie.objectId = ~ie.objectId;
+                e.printStackTrace();
+                return e.getCause().getMessage();
+            } else {
+                throw new UnsupportedOperationException("TODO: How to serialize Throwable");
+            }
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
         }
     }
 }

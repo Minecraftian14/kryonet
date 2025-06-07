@@ -55,7 +55,7 @@ public class RemoteSpace {
         return this;
     }
 
-    protected void registerMethods(Class<?> clazz) {
+    void registerMethods(Class<?> clazz) {
         for (Method method : clazz.getMethods()) {
             int modifiers = method.getModifiers();
             if (!Modifier.isPublic(modifiers) || Modifier.isStatic(modifiers)) continue;
@@ -75,7 +75,7 @@ public class RemoteSpace {
 
     // Host Management
 
-    protected void saveObject(int objectId, Class<?> clazz, Object object) {
+    void saveObject(int objectId, Object object) {
         if (oidToObj.containsKey(objectId)) throw new IllegalArgumentException("Object id " + objectId + " already configured for object " + oidToObj.get(objectId));
         nextObjectId = objectId + 1;
         objToOid.put(object, objectId);
@@ -84,7 +84,7 @@ public class RemoteSpace {
 
     public void hostObject(Connection connection, int objectId, Object object) {
         // Class explicitly not required, since we only invoke the methods
-        saveObject(objectId, object.getClass(), object);
+        saveObject(objectId, object);
         connection.addListener(invocationHandler);
     }
 
@@ -93,7 +93,7 @@ public class RemoteSpace {
     }
 
     public void hostObject(Server server, int objectId, Object object) {
-        saveObject(objectId, object.getClass(), object);
+        saveObject(objectId, object);
         server.addListener(Listener.connected((connection) -> connection.addListener(invocationHandler)));
     }
 
@@ -152,7 +152,7 @@ public class RemoteSpace {
         if (resClass == boolean.class) return Boolean.FALSE;
         if (resClass == float.class) return 0f;
         if (resClass == char.class) return (char) 0;
-        if (resClass == long.class) return 0l;
+        if (resClass == long.class) return 0L;
         if (resClass == short.class) return (short) 0;
         if (resClass == byte.class) return (byte) 0;
         if (resClass == double.class) return 0d;
@@ -160,12 +160,19 @@ public class RemoteSpace {
     }
 
     boolean delegationRequired(RMI.RMISupplier remote, Method method) {
-        return remote != null && method.getDeclaringClass().isAssignableFrom(remote.getClass());
+        if (remote == null) return false;
+        if (method.getDeclaringClass().isAssignableFrom(remote.getClass())) return true;
+        if (!method.getDeclaringClass().isAssignableFrom(Object.class)) return false;
+        RMI rmi = remote.getRMI(null);
+        if (rmi == null) return false;
+        if (rmi.delegatedToString() && method.getName().equals("toString")) return true;
+        if (rmi.delegatedHashCode() && method.getName().equals("hashCode")) return true;
+        return false;
     }
 
-    Object delegate(RMI.RMISupplier delegate, Method method, Object[] params) {
+    Object invokeUsingReflection(Object object, Method method, Object[] params) {
         try {
-            return method.invoke(delegate, params);
+            return method.invoke(object, params);
         } catch (IllegalAccessException | InvocationTargetException e) {
             throw new RuntimeException(e);
         }
@@ -173,10 +180,10 @@ public class RemoteSpace {
 
     Object invokeMethod(Connection connection, int objectId, RMI.RMISupplier delegate, Method method, Object[] params) {
         if (delegationRequired(delegate, method))
-            return delegate(delegate, method, params);
+            return invokeUsingReflection(delegate, method, params);
         int methodId = metToMid.get(method, -1);
         CachedMethod cMethod = midToCMet.get(methodId);
-        RMI rmi = delegate != null ? delegate.getRMI() : cMethod.rmi;
+        RMI rmi = delegate != null ? delegate.getRMI(cMethod.rmi) : cMethod.rmi;
         if (rmi.closed()) return primitize(null, cMethod.resClass);
         int transactionId = lastTransactionId = transactionIdSupplier.getAndIncrement();
 
@@ -208,7 +215,7 @@ public class RemoteSpace {
     }
 
     ExecutionEvent createRemoteResult(Connection connection, ExecutionEvent ee) {
-        if (!ee.method.isResLocal) return ee;
+        if (!ee.method.isResLocal || ee.objectId < 0) return ee;
         int objectId = (int) ee.result;
         ee.result = null;
         if (objectId == -1) return ee;
@@ -227,7 +234,7 @@ public class RemoteSpace {
         });
     }
 
-    protected InvocationEvent createRemoteParams(Connection connection, InvocationEvent ie) {
+    InvocationEvent createRemoteParams(Connection connection, InvocationEvent ie) {
         for (int index : ie.method.localParamIndices) {
             Object[] params = ie.params;
             int objectId = (int) params[index];
@@ -238,8 +245,8 @@ public class RemoteSpace {
         return ie;
     }
 
-    protected ExecutionEvent hostResult(Connection connection, ExecutionEvent ee) {
-        if (!ee.method.isResLocal) return ee;
+    ExecutionEvent hostResult(Connection connection, ExecutionEvent ee) {
+        if (!ee.method.isResLocal || ee.objectId < 0) return ee;
         Object param = ee.result;
         ee.result = -1;
         if (param == null) return ee;

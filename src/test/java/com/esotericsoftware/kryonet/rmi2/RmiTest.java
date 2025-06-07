@@ -3,6 +3,7 @@ package com.esotericsoftware.kryonet.rmi2;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.*;
 import com.esotericsoftware.kryonet.rmi.RemoteObject;
+import com.esotericsoftware.kryonet.rmi2.RMI.TransmitExceptions.Transmission;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -11,8 +12,7 @@ import java.util.List;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 public class RmiTest extends KryoNetTestCase {
 
@@ -90,7 +90,7 @@ public class RmiTest extends KryoNetTestCase {
         IntSupplier backwardSupplier();
     }
 
-    class ClosureTestImpl extends TestHelper implements ClosureTest {
+    static class ClosureTestImpl extends TestHelper implements ClosureTest {
 
         public ClosureTestImpl(Server server) {
             super(server);
@@ -140,7 +140,7 @@ public class RmiTest extends KryoNetTestCase {
         void d();
     }
 
-    class AImpl extends TestHelper implements A {
+    static class AImpl extends TestHelper implements A {
         public AImpl(Server server) {
             super(server);
         }
@@ -151,7 +151,7 @@ public class RmiTest extends KryoNetTestCase {
         }
     }
 
-    class BImpl extends TestHelper implements B {
+    static class BImpl extends TestHelper implements B {
         public BImpl(Server server) {
             super(server);
         }
@@ -162,7 +162,7 @@ public class RmiTest extends KryoNetTestCase {
         }
     }
 
-    class CImpl extends TestHelper implements C {
+    static class CImpl extends TestHelper implements C {
         public CImpl(Server server) {
             super(server);
         }
@@ -173,7 +173,7 @@ public class RmiTest extends KryoNetTestCase {
         }
     }
 
-    class DImpl implements D {
+    static class DImpl implements D {
         Connection connection;
 
         public DImpl(Connection connection) {
@@ -194,12 +194,12 @@ public class RmiTest extends KryoNetTestCase {
 
         @RMI.Local
         default int process2(int a) {
-            return a | 0b10;
+            return a | 0b100;
         }
 
         @RMI.UDP
         default int process4(int a) {
-            return a | 0b100;
+            return process2(a);
         }
 
         @RMI.NonBlocking
@@ -217,30 +217,29 @@ public class RmiTest extends KryoNetTestCase {
             return a | 0b100000;
         }
 
-        @RMI.LocalExceptions
+        @RMI.ResponseTimeout(100_000)
+        @RMI.TransmitExceptions(Transmission.GET_MESSAGE)
         default int process64(int a) {
-            return a | 0b1000000;
+            throw new RuntimeException("" + (a | 0b1000000));
+//            return a | 0b1000000;
         }
 
-        // TODO MOVE THESE TO TYPE INSTEAD OF METHOD
-        @RMI.RemoteToString
         default int process128(int a) {
             return a | 0b10000000;
         }
 
-        @RMI.RemoteHashCode
         default int process256(int a) {
             return a | 0b100000000;
         }
 
         @RMI(local = true)
         default int process512(int a) {
-            return a | 0b1000000000;
+            return a | 0b10000000000;
         }
 
         @RMI(useUdp = true, nonBlocking = true)
         default int process1024(int a) {
-            return a | 0b10000000000;
+            return process512(a);
         }
 
         @RMI(noReturns = true)
@@ -253,7 +252,7 @@ public class RmiTest extends KryoNetTestCase {
             return a | 0b1000000000000;
         }
 
-        @RMI(remoteToString = true, remoteHashCode = true)
+        @RMI(delegatedToString = true, delegatedHashCode = true)
         default int process8192(int a) {
             return a | 0b10000000000000;
         }
@@ -284,6 +283,29 @@ public class RmiTest extends KryoNetTestCase {
                 throw new RuntimeException(e);
             }
             return Annotations.super.process4096(a);
+        }
+    }
+
+    @RMI.DelegatedToString
+    @RMI.DelegatedHashCode
+    static class AImpl2 extends TestHelper implements A {
+        public AImpl2(Server server) {
+            super(server);
+        }
+
+        @Override
+        public void a() {
+            send("a2");
+        }
+    }
+
+    interface Delegate {
+        void delegatedA();
+    }
+
+    static class ADelegate implements RMI.RMISupplier, Delegate {
+        @Override
+        public void delegatedA() {
         }
     }
 
@@ -462,7 +484,11 @@ public class RmiTest extends KryoNetTestCase {
         x = (int) clientRegistry.getLastResult();
         a.process16(x); // No Returns
         x = a.process32(x);
-        x = a.process64(x);
+        try {
+            x = a.process64(x);
+        } catch (Exception e) {
+            x = Integer.parseInt(e.getMessage());
+        }
         x = a.process128(x);
         x = a.process256(x);
 //      x = a.process512(x); // Local only
@@ -473,6 +499,39 @@ public class RmiTest extends KryoNetTestCase {
         x = a.process8192(x);
         a.process16384(x); // Closed
         assertEquals(0b011010111101101, x);
+
+        stopEndPoints(2000);
+        waitForThreads();
+        server.stop();
+        server.close();
+    }
+
+    @Test
+    void testTypeAnnotations() throws IOException {
+        List<String> receivedEvents = new ArrayList<>(4);
+
+        Server server = new Server();
+        RemoteSpace serverRegistry = new RemoteSpace();
+        register(server.getKryo(), serverRegistry);
+        startEndPoint(server);
+        server.bind(tcpPort, udpPort);
+
+        AImpl2 host = new AImpl2(server);
+        serverRegistry.hostObject(server, 1, host);
+
+        Client client = new Client();
+        RemoteSpace clientRegistry = new RemoteSpace();
+        register(client.getKryo(), clientRegistry);
+        ADelegate delegate = new ADelegate();
+        Annotations delegatedRemote = clientRegistry.createRemote(client, Annotations.class, delegate, Delegate.class);
+        Annotations plainRemote = clientRegistry.createRemote(client, Annotations.class);
+        startEndPoint(client);
+        client.connect(5000, KryoNetTestCase.host, tcpPort, udpPort);
+
+        assertEquals(delegate.toString(), delegatedRemote.toString());
+        assertEquals(delegate.hashCode(), delegatedRemote.hashCode());
+        assertNotEquals(delegate.toString(), plainRemote.toString());
+        assertNotEquals(delegate.hashCode(), plainRemote.hashCode());
 
         stopEndPoints(2000);
         waitForThreads();

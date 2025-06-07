@@ -93,12 +93,12 @@ public interface Listener {
         };
     }
 
-    static Listener received(Class<?> clazz, BiConsumer<Connection, Object> listener) {
+    static <T> Listener received(Class<T> clazz, BiConsumer<Connection, T> listener) {
         return new Listener() {
             @Override
             public void received(Connection connection, Object object) {
                 if (clazz.isInstance(object))
-                    listener.accept(connection, object);
+                    listener.accept(connection, clazz.cast(object));
             }
         };
     }

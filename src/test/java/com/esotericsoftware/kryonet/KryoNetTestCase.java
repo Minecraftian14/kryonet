@@ -131,6 +131,7 @@ abstract public class KryoNetTestCase {
         kryo.register(Object.class); // Needed for Object#toString, hashCode,
         // etc.
 
+        kryo.register(Throwable.class);
         kryo.register(UnsupportedOperationException.class);
         // Needed for throwable:
         kryo.register(StackTraceElement[].class);
