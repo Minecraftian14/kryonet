@@ -8,6 +8,7 @@ import com.esotericsoftware.kryo.util.Pool;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.FrameworkMessage;
 import com.esotericsoftware.kryonet.Listener;
+import com.esotericsoftware.minlog.Log;
 
 import static com.esotericsoftware.kryonet.rmi2.RMI.TransmitExceptions.Transmission.GET_WHOLE;
 
@@ -25,8 +26,20 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         }
     };
 
+    private static ExecutionEvent obtain() {
+        synchronized (POOL) {
+            return POOL.obtain();
+        }
+    }
+
+    private static void free(ExecutionEvent ie) {
+        synchronized (POOL) {
+            POOL.free(ie);
+        }
+    }
+
     public static ExecutionEvent obtainEE(int transactionId, int objectId, CachedMethod method, Object result) {
-        ExecutionEvent ee = POOL.obtain();
+        ExecutionEvent ee = obtain();
         ee.transactionId = transactionId;
         ee.objectId = objectId;
         ee.method = method;
@@ -57,7 +70,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
 
     @Override
     public void close() {
-        POOL.free(this);
+        free(this);
     }
 
     static final class Handler extends Serializer<ExecutionEvent> implements Listener {
@@ -84,7 +97,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
 
         @Override
         public ExecutionEvent read(Kryo kryo, Input input, Class<? extends ExecutionEvent> aClass) {
-            ExecutionEvent ee = POOL.obtain();
+            ExecutionEvent ee = obtain();
             ee.transactionId = input.readVarInt(true);
             ee.objectId = input.readVarInt(false);
             ee.method = registry.midToCMet.get(input.readVarInt(true));
@@ -100,7 +113,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         @Override
         public void received(Connection connection, Object event) {
             if (!(event instanceof ExecutionEvent)) return;
-            System.out.println("ExecutionEvent RECEIVED ON THREAD " + Thread.currentThread().getName());
+            Log.debug("Received ExecutionEvent: " + event);
             ExecutionEvent ee = (ExecutionEvent) event;
             registry.executionLock.write(ee.transactionId, ee);
         }

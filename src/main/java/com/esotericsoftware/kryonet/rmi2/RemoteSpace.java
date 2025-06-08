@@ -7,11 +7,14 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import com.esotericsoftware.kryonet.Server;
 import com.esotericsoftware.kryonet.util.ObjectIntMap;
+import com.esotericsoftware.minlog.Log;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -50,21 +53,44 @@ public class RemoteSpace {
 
     public RemoteSpace registerRemotable(Class<?> clazz) {
         if (clsReg.containsKey(clazz)) throw new IllegalArgumentException("Class " + clazz + " is already registered.");
+        Log.debug("Registering remotable " + clazz);
         clsReg.put(clazz, 0);
         registerMethods(clazz);
         return this;
     }
 
     void registerMethods(Class<?> clazz) {
+        ArrayList<Method> methods = new ArrayList<>();
         for (Method method : clazz.getMethods()) {
             int modifiers = method.getModifiers();
             if (!Modifier.isPublic(modifiers) || Modifier.isStatic(modifiers)) continue;
             if (RMI.Helper.isLocal(method)) continue;
+            methods.add(method);
+        }
+        methods.sort(this::compareMethods);
+        for (Method method : methods) {
             int methodId = nextMethodId++;
+            Log.debug("Registering remotable method " + methodId + " to " + method + " for " + clazz);
             midToCMet.put(methodId, new CachedMethod(methodId, method));
             metToMid.put(method, methodId);
         }
         for (Class<?> iSuper : clazz.getInterfaces()) registerMethods(iSuper);
+    }
+
+    private int compareMethods(Method m1, Method m2) {
+        // Methods are sorted so they can be represented as an index.
+        // MORE IMPORTANTLY, the order in which methods are received using getMethods is not guaranteed!
+        int diff = m1.getName().compareTo(m2.getName());
+        if (diff != 0) return diff;
+        Class<?>[] p1s = m1.getParameterTypes();
+        Class<?>[] p2s = m2.getParameterTypes();
+        if (p1s.length > p2s.length) return 1;
+        if (p1s.length < p2s.length) return -1;
+        for (int i = 0; i < p1s.length; i++) {
+            diff = p1s[i].getName().compareTo(p2s[i].getName());
+            if (diff != 0) return diff;
+        }
+        throw new RuntimeException("Two methods with same signature!"); // Impossible.
     }
 
     public RemoteSpace registerEvents(Kryo kryo) {
@@ -148,13 +174,13 @@ public class RemoteSpace {
     static Object primitize(Object object, Class<?> resClass) {
         if (object != null) return object;
         if (!resClass.isPrimitive()) return null;
-        if (resClass == int.class) return 0;
         if (resClass == boolean.class) return Boolean.FALSE;
-        if (resClass == float.class) return 0f;
-        if (resClass == char.class) return (char) 0;
-        if (resClass == long.class) return 0L;
-        if (resClass == short.class) return (short) 0;
         if (resClass == byte.class) return (byte) 0;
+        if (resClass == char.class) return (char) 0;
+        if (resClass == short.class) return (short) 0;
+        if (resClass == int.class) return 0;
+        if (resClass == long.class) return 0L;
+        if (resClass == float.class) return 0f;
         if (resClass == double.class) return 0d;
         return null;
     }
@@ -179,6 +205,7 @@ public class RemoteSpace {
     }
 
     Object invokeMethod(Connection connection, int objectId, RMI.RMISupplier delegate, Method method, Object[] params) {
+        Log.debug("Remote Invocation: connection=" + connection + ", objectId=" + objectId + ", delegate=" + delegate + ", method=" + method + ", params=" + Arrays.toString(params));
         if (delegationRequired(delegate, method))
             return invokeUsingReflection(delegate, method, params);
         int methodId = metToMid.get(method, -1);
@@ -187,14 +214,14 @@ public class RemoteSpace {
         if (rmi.closed()) return primitize(null, cMethod.resClass);
         int transactionId = lastTransactionId = transactionIdSupplier.getAndIncrement();
 
-        System.out.println("RemoteObjectRegistry.invokeMethod " + transactionId + " :: " + method + " >>> " + cMethod);
+        Log.debug("Remote Invocation: transactionId=" + transactionId + ", objectId=" + objectId + ", cMethod=" + cMethod);
         send(cMethod, connection, hostParams(connection, InvocationEvent.obtainIE(transactionId, objectId, cMethod, params)));
-        System.out.println("POSSIBLY WAITING FOR ExecutionEvent ON THREAD " + Thread.currentThread().getName());
         if (rmi.noReturns()) return primitize(null, cMethod.resClass);
         if (rmi.nonBlocking()) {
             asyncExecutions.put(transactionId, AsyncExecution.obtainAE(connection, rmi.responseTimeout()));
             return primitize(null, cMethod.resClass);
         }
+        Log.debug("Waiting for ExecutionEvent: transactionId=" + transactionId + ", thread=" + Thread.currentThread().getName());
         // Wait for the ExecutionEvent. which contains the result.
         // If the return type is supposed to be a remote object as well, the result must be an object id.
         // Replace the id with the actual remote object.
@@ -224,6 +251,7 @@ public class RemoteSpace {
     }
 
     void invokeMethod(Connection connection, InvocationEvent ie) {
+        Log.debug("Local Invocation: connection=" + connection + ", objectId=" + ie.objectId + ", method=" + ie.method);
         Object object = oidToObj.get(ie.objectId);
 
         executor.submit(() -> {

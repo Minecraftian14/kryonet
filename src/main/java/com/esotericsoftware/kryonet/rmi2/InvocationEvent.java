@@ -8,6 +8,7 @@ import com.esotericsoftware.kryo.util.Pool;
 import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.FrameworkMessage;
 import com.esotericsoftware.kryonet.Listener;
+import com.esotericsoftware.minlog.Log;
 
 import java.util.Arrays;
 
@@ -25,8 +26,21 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
         }
     };
 
+    private static InvocationEvent obtain() {
+        synchronized (POOL) {
+            return POOL.obtain();
+//            return new InvocationEvent();
+        }
+    }
+
+    private static void free(InvocationEvent ie) {
+        synchronized (POOL) {
+            POOL.free(ie);
+        }
+    }
+
     static InvocationEvent obtainIE(int transactionId, int objectId, CachedMethod method, Object[] args) {
-        InvocationEvent ie = POOL.obtain();
+        InvocationEvent ie = obtain();
         ie.transactionId = transactionId;
         ie.objectId = objectId;
         ie.method = method;
@@ -46,7 +60,7 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
 
     @Override
     public void close() {
-        POOL.free(this);
+        free(this);
     }
 
     static class Handler extends Serializer<InvocationEvent> implements Listener {
@@ -70,11 +84,14 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
 
         @Override
         public InvocationEvent read(Kryo kryo, Input input, Class<? extends InvocationEvent> aClass) {
-            InvocationEvent ie = POOL.obtain();
+            InvocationEvent ie = obtain();
             ie.transactionId = input.readVarInt(true);
             ie.objectId = input.readVarInt(true);
             ie.method = registry.midToCMet.get(input.readVarInt(true));
             ie.params = new Object[input.readVarInt(true)];
+            Log.debug("params.length=" + ie.params.length);
+            Log.debug("ir.method.serClasses.length=" + ie.method.argClasses.length);
+            Log.debug("ir.method.serClasses.length=" + ie.method.serClasses.length);
             for (int i = 0; i < ie.params.length; i++)
                 ie.params[i] = kryo.readObjectOrNull(input, ie.method.serClasses[i]);
             return ie;
@@ -83,7 +100,7 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
         @Override
         public void received(Connection connection, Object event) {
             if (!(event instanceof InvocationEvent)) return;
-            System.out.println("InvocationEvent RECEIVED ON THREAD " + Thread.currentThread().getName());
+            Log.debug("Received InvocationEvent: " + event);
             InvocationEvent ie = (InvocationEvent) event;
             registry.invokeMethod(connection, ie);
         }
