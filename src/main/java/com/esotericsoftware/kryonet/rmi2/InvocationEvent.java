@@ -86,6 +86,7 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
         public InvocationEvent read(Kryo kryo, Input input, Class<? extends InvocationEvent> aClass) {
             InvocationEvent ie = obtain();
             ie.transactionId = input.readVarInt(true);
+            Log.debug("Reading Invocation Event: transactionId=" + ie.transactionId);
             ie.objectId = input.readVarInt(true);
             ie.method = registry.midToCMet.get(input.readVarInt(true));
             ie.params = new Object[input.readVarInt(true)];

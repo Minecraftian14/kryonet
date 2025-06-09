@@ -99,6 +99,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         public ExecutionEvent read(Kryo kryo, Input input, Class<? extends ExecutionEvent> aClass) {
             ExecutionEvent ee = obtain();
             ee.transactionId = input.readVarInt(true);
+            Log.debug("Reading Execution Event: transactionId=" + ee.transactionId);
             ee.objectId = input.readVarInt(false);
             ee.method = registry.midToCMet.get(input.readVarInt(true));
             if (ee.method.isResLocal) input.readVarInt(true);
