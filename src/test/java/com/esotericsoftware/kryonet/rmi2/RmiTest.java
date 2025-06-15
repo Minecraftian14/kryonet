@@ -4,11 +4,16 @@ import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryonet.*;
 import com.esotericsoftware.kryonet.rmi.RemoteObject;
 import com.esotericsoftware.kryonet.rmi2.RMI.TransmitExceptions.Transmission;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
@@ -309,6 +314,22 @@ public class RmiTest extends KryoNetTestCase {
         }
     }
 
+    interface GenericsInClosures {
+        @RMI.ResponseTimeout(60_000)
+        void getSomeData(@RMI.Closure Function<Integer, String> callback);
+    }
+
+    static class GenericsInClosuresImpl extends TestHelper implements GenericsInClosures {
+        public GenericsInClosuresImpl(Server server) {
+            super(server);
+        }
+
+        @Override
+        public void getSomeData(Function<Integer, String> callback) {
+            send(callback.apply(1045) + " Data");
+        }
+    }
+
     public void register(Kryo kryo, RemoteSpace registry) {
         super.register(kryo);
 
@@ -316,13 +337,12 @@ public class RmiTest extends KryoNetTestCase {
         registry.registerRemotable(Object.class);
         registry.registerRemotable(SimpleFunctions.class);
         registry.registerRemotable(ClosureTest.class);
-        registry.registerRemotable(IntConsumer.class);
-        registry.registerRemotable(IntSupplier.class);
         registry.registerRemotable(A.class);
         registry.registerRemotable(B.class);
         registry.registerRemotable(C.class);
         registry.registerRemotable(D.class);
         registry.registerRemotable(Annotations.class);
+        registry.registerRemotable(GenericsInClosures.class);
 
         kryo.register(Holder.class);
     }
@@ -415,7 +435,7 @@ public class RmiTest extends KryoNetTestCase {
     }
 
     @Test
-    void testJumble() throws IOException {
+    void testJumble() throws IOException, InterruptedException {
         List<String> receivedEvents = new ArrayList<>(4);
 
         Server server = new Server();
@@ -443,6 +463,8 @@ public class RmiTest extends KryoNetTestCase {
         clientRegistry.nextProxyId = 10;
         startEndPoint(client);
         client.connect(5000, host, tcpPort, udpPort);
+
+        Thread.sleep(1000);
 
         a.a();
         b.b();
@@ -508,8 +530,6 @@ public class RmiTest extends KryoNetTestCase {
 
     @Test
     void testTypeAnnotations() throws IOException {
-        List<String> receivedEvents = new ArrayList<>(4);
-
         Server server = new Server();
         RemoteSpace serverRegistry = new RemoteSpace();
         register(server.getKryo(), serverRegistry);
@@ -565,5 +585,49 @@ public class RmiTest extends KryoNetTestCase {
         waitForThreads();
         server.stop();
         server.close();
+    }
+
+    @Test
+    @Disabled("No bright ideas, regarding how to implement this.")
+    void testGenericsInCallbacks() throws IOException {
+        // TODO:
+        //  Auto register closure remotables during the normal registration
+        //  If, for generic entities children specify a solid type, like
+        //      class MyClass extends Supplier<Integer>
+        //  Then use reflection to retrieve the actual types of returns and parameters instead of generics (which gives plain Object).
+        //  In case of
+        //      class MyClass<T> extends Supplier<T>
+        //  Try to find a use case, else throw an exception: Invalid entity, Classes w/o generics can not be hosted due to the lack of type information necessary for serialization.
+        //  Finally, do the same thing for parameter types.
+        //  .
+        //  Basically, you need to refactor the caching mechanism to instead take two main entities, the class and the generic containing type
+        //  For normal entities provided for registration, we can derive the generic type
+        //  For parameters, we supply the types
+        List<String> receivedEvents = new ArrayList<>(4);
+
+        Server server = new Server();
+        RemoteSpace serverRegistry = new RemoteSpace();
+        register(server.getKryo(), serverRegistry);
+        startEndPoint(server);
+        server.bind(tcpPort, udpPort);
+        serverRegistry.hostObject(server, 3, new GenericsInClosuresImpl(server));
+
+        Client client = new Client();
+        RemoteSpace clientRegistry = new RemoteSpace();
+        register(client.getKryo(), clientRegistry);
+        client.addListener(Listener.received(String.class, (connection, object) -> receivedEvents.add((String) object)));
+        GenericsInClosures gic = clientRegistry.createRemote(client, 3, GenericsInClosures.class);
+        clientRegistry.nextProxyId = 10;
+        startEndPoint(client);
+        client.connect(5000, host, tcpPort, udpPort);
+
+        gic.getSomeData(i -> "Hoisted " + i);
+
+        stopEndPoints(2000);
+        waitForThreads();
+        server.stop();
+        server.close();
+
+        assertEquals("Hoisted 1045 Data", receivedEvents.get(0));
     }
 }

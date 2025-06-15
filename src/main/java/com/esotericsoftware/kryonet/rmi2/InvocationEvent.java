@@ -29,7 +29,6 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
     private static InvocationEvent obtain() {
         synchronized (POOL) {
             return POOL.obtain();
-//            return new InvocationEvent();
         }
     }
 

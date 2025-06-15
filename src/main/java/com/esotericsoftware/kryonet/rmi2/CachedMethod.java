@@ -6,13 +6,21 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.Arrays;
+import java.util.stream.Stream;
 
 class CachedMethod {
     final int id;
     private final Method reflection;
     final RMI rmi;
+    /**
+     * Actual classes of the arguments (Generic arguments are Object)
+     */
     final Class<?>[] argClasses;
+    /**
+     * In case of local objects, we pass the object id, for that we store int class here instead.
+     */
     final Class<?>[] serClasses;
+    final Class<?>[] locClasses;
     final Class<?> resClass;
     final boolean isResLocal;
 
@@ -34,16 +42,22 @@ class CachedMethod {
         Parameter[] parameters = method.getParameters();
 
         if (isFunctionalInterface) {
+            // TODO: Why did I add this? Is it even required?
+            //  Future self: Okay, so I added this so that param classes can be like Function<Supplier<Int>>
+            //  But that is far from complete due to lack of type info
 
             int localParamCount = 0;
             for (Parameter parameter : parameters)
                 if (RMI.Helper.isLocal(parameter) || parameter.getType().isAnnotationPresent(FunctionalInterface.class))
                     localParamCount++;
             this.localParamIndices = new int[localParamCount];
+            this.locClasses = new Class[localParamCount + (isResLocal ? 1 : 0)];
             localParamCount = 0;
             for (int i = 0; i < parameters.length; i++)
-                if (RMI.Helper.isLocal(parameters[i]) || parameters[i].getType().isAnnotationPresent(FunctionalInterface.class))
-                    localParamIndices[localParamCount++] = i;
+                if (RMI.Helper.isLocal(parameters[i]) || parameters[i].getType().isAnnotationPresent(FunctionalInterface.class)) {
+                    localParamIndices[localParamCount] = i;
+                    locClasses[localParamCount++] = parameters[i].getType();
+                }
 
         } else {
 
@@ -52,12 +66,17 @@ class CachedMethod {
                 if (RMI.Helper.isLocal(parameter))
                     localParamCount++;
             this.localParamIndices = new int[localParamCount];
+            this.locClasses = new Class[localParamCount + (isResLocal ? 1 : 0)];
             localParamCount = 0;
             for (int i = 0; i < parameters.length; i++)
-                if (RMI.Helper.isLocal(parameters[i]))
-                    localParamIndices[localParamCount++] = i;
+                if (RMI.Helper.isLocal(parameters[i])) {
+                    localParamIndices[localParamCount] = i;
+                    locClasses[localParamCount++] = parameters[i].getType();
+                }
 
         }
+
+        if (isResLocal) this.locClasses[locClasses.length - 1] = resClass;
 
         // BOGUS TRICK...
         for (int paramIndex : localParamIndices)
@@ -97,5 +116,9 @@ class CachedMethod {
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    Stream<Class<?>> getLocalClasses() {
+        return Arrays.stream(locClasses);
     }
 }

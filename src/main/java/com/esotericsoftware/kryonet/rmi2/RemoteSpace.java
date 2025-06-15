@@ -13,7 +13,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,25 +58,40 @@ public class RemoteSpace {
         return this;
     }
 
+    public boolean isNotRegistered(Class<?> aClass) {
+        return !clsReg.containsKey(aClass);
+    }
+
     void registerMethods(Class<?> clazz) {
-        ArrayList<Method> methods = new ArrayList<>();
-        for (Method method : clazz.getMethods()) {
-            int modifiers = method.getModifiers();
-            if (!Modifier.isPublic(modifiers) || Modifier.isStatic(modifiers)) continue;
-            if (RMI.Helper.isLocal(method)) continue;
-            methods.add(method);
-        }
-        methods.sort(this::compareMethods);
-        for (Method method : methods) {
-            int methodId = nextMethodId++;
-            Log.debug("Registering remotable method " + methodId + " to " + method + " for " + clazz);
-            midToCMet.put(methodId, new CachedMethod(methodId, method));
-            metToMid.put(method, methodId);
-        }
+        Log.debug("Registering methods for " + clazz);
+        Arrays.stream(clazz.getMethods())
+            .filter(RemoteSpace::isMethodRemotable)
+            .filter(RMI.Helper::isNotLocal)
+            .sorted(RemoteSpace::compareMethods)
+            .map(this::registerMethod)
+            .flatMap(CachedMethod::getLocalClasses)
+            .filter(this::isNotRegistered)
+            .distinct()
+            .forEach(this::registerRemotable);
         for (Class<?> iSuper : clazz.getInterfaces()) registerMethods(iSuper);
     }
 
-    private int compareMethods(Method m1, Method m2) {
+    CachedMethod registerMethod(Method method) {
+        int methodId = nextMethodId++;
+        Log.debug("Registering remotable method " + methodId + " to " + method);
+        CachedMethod cMethod = new CachedMethod(methodId, method);
+        midToCMet.put(methodId, cMethod);
+        metToMid.put(method, methodId);
+        return cMethod;
+    }
+
+    public static boolean isMethodRemotable(Method method) {
+        int modifiers = method.getModifiers();
+        // TODO: Do more research into what other methods can not be remoted.
+        return Modifier.isPublic(modifiers) && !Modifier.isStatic(modifiers);
+    }
+
+    public static int compareMethods(Method m1, Method m2) {
         // Methods are sorted so they can be represented as an index.
         // MORE IMPORTANTLY, the order in which methods are received using getMethods is not guaranteed!
         int diff = m1.getName().compareTo(m2.getName());
@@ -102,10 +116,22 @@ public class RemoteSpace {
     // Host Management
 
     void saveObject(int objectId, Object object) {
-        if (oidToObj.containsKey(objectId)) throw new IllegalArgumentException("Object id " + objectId + " already configured for object " + oidToObj.get(objectId));
+        // TODO: Make Connections a list instead, host once (not evey connection) and add that connection to the host
+        //  Also, connections is a property of registry not the object
+        if (oidToObj.containsKey(objectId))
+            throw new IllegalArgumentException("Object id " + objectId + " already configured for object " + oidToObj.get(objectId) + ". Error saving object " + object);
         nextObjectId = objectId + 1;
         objToOid.put(object, objectId);
         oidToObj.put(objectId, object);
+    }
+
+    public void hookConnection(Connection connection) {
+        connection.addListener(invocationHandler);
+    }
+
+    public void hostObject(int objectId, Object object) {
+        // Class explicitly not required, since we only invoke the methods
+        saveObject(objectId, object);
     }
 
     public void hostObject(Connection connection, int objectId, Object object) {

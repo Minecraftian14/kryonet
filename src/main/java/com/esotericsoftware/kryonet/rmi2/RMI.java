@@ -156,9 +156,9 @@ public @interface RMI {
                    || isValidClosure(parameter);
         }
 
-        public static boolean isLocal(Method method) {
-            return method.isAnnotationPresent(Local.class)
-                   || (method.isAnnotationPresent(RMI.class) && method.getAnnotation(RMI.class).local());
+        public static boolean isNotLocal(Method method) {
+            return !method.isAnnotationPresent(Local.class)
+                   && (!method.isAnnotationPresent(RMI.class) || !method.getAnnotation(RMI.class).local());
         }
 
         static boolean isValidClosure(Parameter parameter) {
