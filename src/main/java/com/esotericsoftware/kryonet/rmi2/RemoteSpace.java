@@ -115,7 +115,7 @@ public class RemoteSpace {
 
     // Host Management
 
-    void saveObject(int objectId, Object object) {
+    int saveObject(int objectId, Object object) {
         // TODO: Make Connections a list instead, host once (not evey connection) and add that connection to the host
         //  Also, connections is a property of registry not the object
         if (oidToObj.containsKey(objectId))
@@ -123,16 +123,22 @@ public class RemoteSpace {
         nextObjectId = objectId + 1;
         objToOid.put(object, objectId);
         oidToObj.put(objectId, object);
+        return objectId;
     }
 
     public void hookConnection(Connection connection) {
         connection.addListener(invocationHandler);
     }
 
-    public void hostObject(int objectId, Object object) {
+    public int hostObject(int objectId, Object object) {
         // Class explicitly not required, since we only invoke the methods
-        saveObject(objectId, object);
+        return saveObject(objectId, object);
     }
+
+    public int hostObject(Object object) {
+        return saveObject(nextObjectId++, object);
+    }
+
 
     public void hostObject(Connection connection, int objectId, Object object) {
         // Class explicitly not required, since we only invoke the methods
