@@ -6,13 +6,10 @@ import com.esotericsoftware.kryonet.rmi.RemoteObject;
 import com.esotericsoftware.kryonet.rmi2.RMI.TransmitExceptions.Transmission;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
@@ -629,5 +626,63 @@ public class RmiTest extends KryoNetTestCase {
         server.close();
 
         assertEquals("Hoisted 1045 Data", receivedEvents.get(0));
+    }
+
+    interface CCallable extends Callable<Object> { }
+
+    @Test
+    void testDifferenceInHandles() throws Exception {
+        Set<Integer> receivedEvents = Collections.synchronizedSet(new HashSet<>(3));
+        ExecutorService executor = Executors.newCachedThreadPool();
+        List<CCallable> callables = new ArrayList<>();
+
+        Server server = new Server();
+        RemoteSpace serverRegistry = new RemoteSpace();
+        register(server.getKryo(), serverRegistry);
+        startEndPoint(server);
+        server.bind(tcpPort, udpPort);
+        serverRegistry.hostObject(server, new SimpleFunctionsImpl(server));
+
+        Callable<RemoteObject> clientSActivity = () -> {
+            Client client = new Client();
+            client.addListener(Listener.connected(connection -> receivedEvents.add(connection.getID())));
+            RemoteSpace clientRegistry = new RemoteSpace();
+            register(client.getKryo(), clientRegistry);
+            SimpleFunctions s = clientRegistry.createRemote(client, SimpleFunctions.class, new DelegateObject(clientRegistry, client), RemoteObject.class);
+            RemoteObject r = (RemoteObject) s;
+            startEndPoint(client);
+            client.connect(5000, host, tcpPort, udpPort);
+
+            callables.add(() -> {
+                assertEquals(Math.PI, s.supplier());
+                r.setNonBlocking(true);
+                assertEquals(0.0, s.supplier());
+                assertEquals(Math.PI, r.waitForLastResponse());
+                return null;
+            });
+
+            return r;
+        };
+
+        RemoteObject r1 = clientSActivity.call();
+        executor.invokeAll(callables, 3L, TimeUnit.SECONDS);
+        callables.clear();
+        r1.close();
+
+        RemoteObject r2 = clientSActivity.call();
+        RemoteObject r3 = clientSActivity.call();
+        executor.invokeAll(callables, 3L, TimeUnit.SECONDS);
+        callables.clear();
+        r2.close();
+        r3.close();
+
+        stopEndPoints(2000);
+        waitForThreads();
+        server.stop();
+        server.close();
+
+        assertTrue(receivedEvents.contains(1), "contains(1)");
+        assertTrue(receivedEvents.contains(2), "contains(2)");
+        assertTrue(receivedEvents.contains(3), "contains(3)");
     }
 }
