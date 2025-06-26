@@ -14,8 +14,10 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.esotericsoftware.kryonet.rmi2.ExecutionEvent.obtainEE;
@@ -38,7 +40,7 @@ public class RemoteSpace {
     // Proxies
     final ObjectMap<Connection, IntMap<Object>> proxies = new ObjectMap<>();
 
-    final ExecutorService executor = Executors.newSingleThreadExecutor();
+    final ExecutorService executor;
 
     final InvocationEvent.Handler invocationHandler = new InvocationEvent.Handler(this);
     final ExecutionEvent.Handler executionHandler = new ExecutionEvent.Handler(this);
@@ -47,6 +49,14 @@ public class RemoteSpace {
 
     final AtomicInteger transactionIdSupplier = new AtomicInteger();
     final MultiResultLock<ExecutionEvent> executionLock = new MultiResultLock<>();
+
+    public RemoteSpace() {
+        this(Executors.newSingleThreadExecutor());
+    }
+
+    public RemoteSpace(ExecutorService executor) {
+        this.executor = Objects.requireNonNull(executor);
+    }
 
     // Class Initialization
 
@@ -171,6 +181,9 @@ public class RemoteSpace {
         assert (delegate == null) == (delegationClass == null);
         assert (delegate == null) || (delegationClass.isInstance(delegate));
 
+        // TODO: Review and remove this if it is not needed.
+        //  I think, the only valid case is reconnection, but then connection is always new.
+        //  So this is completely unnecessary :: except when createRemote can be called multiple times for the same connection.
         if (!proxies.containsKey(connection)) proxies.put(connection, new IntMap<>());
         IntMap<Object> cache = proxies.get(connection);
         if (cache.containsKey(objectId)) return (T) cache.get(objectId);
@@ -355,6 +368,20 @@ public class RemoteSpace {
         responseTimeout = Math.max(responseTimeout, ae.responseTimeout);
         ae.close();
         return createRemoteResult(connection, executionLock.read(transactionId, responseTimeout)).use();
+    }
+
+    // Utility Methods
+
+    public void shutDownExecutor() {
+        if (executor.isShutdown()) return;
+        try {
+            executor.shutdown();
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS))
+                Log.info(String.format("Executor did not terminate in the specified time, %d tasks did not finish.", executor.shutdownNow().size()));
+        } catch (InterruptedException e) {
+            Log.error(String.format("Interrupted while waiting for executor to shut down, %d tasks did not finish.", executor.shutdownNow().size()), e);
+            executor.shutdownNow();
+        }
     }
 
 }
