@@ -9,7 +9,10 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
@@ -628,7 +631,8 @@ public class RmiTest extends KryoNetTestCase {
         assertEquals("Hoisted 1045 Data", receivedEvents.get(0));
     }
 
-    interface CCallable extends Callable<Object> { }
+    interface CCallable extends Callable<Object> {
+    }
 
     @Test
     void testDifferenceInHandles() throws Exception {
