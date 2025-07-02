@@ -114,7 +114,7 @@ class ExecutionEvent implements FrameworkMessage, AutoCloseable {
         @Override
         public void received(Connection connection, Object event) {
             if (!(event instanceof ExecutionEvent)) return;
-            Log.debug("Received ExecutionEvent: " + event);
+            Log.debug("Received ExecutionEvent: " + registry.logHelper.apply(event));
             ExecutionEvent ee = (ExecutionEvent) event;
             registry.executionLock.write(ee.transactionId, ee);
         }

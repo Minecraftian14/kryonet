@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static com.esotericsoftware.kryonet.rmi2.ExecutionEvent.obtainEE;
 
@@ -41,6 +42,7 @@ public class RemoteSpace {
     final ObjectMap<Connection, IntMap<Object>> proxies = new ObjectMap<>();
 
     final ExecutorService executor;
+    Function<Object, Object> logHelper = o -> o;
 
     final InvocationEvent.Handler invocationHandler = new InvocationEvent.Handler(this);
     final ExecutionEvent.Handler executionHandler = new ExecutionEvent.Handler(this);
@@ -384,4 +386,11 @@ public class RemoteSpace {
         }
     }
 
+    public Function<Object, Object> getLogHelper() {
+        return logHelper;
+    }
+
+    public void setLogHelper(Function<Object, Object> logHelper) {
+        this.logHelper = logHelper;
+    }
 }

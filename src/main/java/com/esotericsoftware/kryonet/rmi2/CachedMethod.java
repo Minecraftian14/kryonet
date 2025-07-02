@@ -26,6 +26,19 @@ class CachedMethod {
 
     final int[] localParamIndices;
 
+    public CachedMethod() {
+        // For serialized toString methods
+        id = 0;
+        reflection = null;
+        rmi = null;
+        argClasses = null;
+        serClasses = null;
+        locClasses = null;
+        resClass = null;
+        isResLocal = false;
+        localParamIndices = null;
+    }
+
     public CachedMethod(int id, Method method) {
         this.id = id;
         this.reflection = method;

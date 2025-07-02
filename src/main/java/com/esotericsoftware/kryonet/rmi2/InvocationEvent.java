@@ -100,7 +100,7 @@ class InvocationEvent implements FrameworkMessage, AutoCloseable {
         @Override
         public void received(Connection connection, Object event) {
             if (!(event instanceof InvocationEvent)) return;
-            Log.debug("Received InvocationEvent: " + event);
+            Log.debug("Received InvocationEvent: " + registry.logHelper.apply(event));
             InvocationEvent ie = (InvocationEvent) event;
             registry.invokeMethod(connection, ie);
         }
